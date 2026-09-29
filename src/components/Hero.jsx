@@ -61,13 +61,16 @@ export default function Hero({ videoSrc }) {
       container.appendChild(p)
     }
 
-    // IntersectionObserver for video play
+    // Play video immediately on mount, then use IntersectionObserver for pause/resume
     const vid = videoRef.current
     if (vid) {
+      // Force play right away (component only mounts after preloader completes)
+      vid.play().catch(() => {})
+
       const obs = new IntersectionObserver(([e]) => {
         if (e.isIntersecting) vid.play().catch(() => {})
         else vid.pause()
-      }, { threshold: 0.2 })
+      }, { threshold: 0.1 })
       obs.observe(vid)
       return () => obs.disconnect()
     }

@@ -15,6 +15,7 @@ import Footer from './components/Footer'
 
 export default function App() {
   const [loaded, setLoaded] = useState(false)
+  const [visible, setVisible] = useState(false)
   const [tourOpen, setTourOpen] = useState(false)
   const [manifest, setManifest] = useState(null)
 
@@ -28,28 +29,43 @@ export default function App() {
       })
   }, [])
 
+  const handleComplete = () => {
+    setLoaded(true)
+    // Small delay so preloader exit animation finishes before showing content
+    setTimeout(() => setVisible(true), 100)
+  }
+
   return (
     <>
       <CustomCursor />
 
-      {!loaded && <Preloader onComplete={() => setLoaded(true)} />}
+      {!loaded && <Preloader onComplete={handleComplete} />}
 
-      <Navbar onStartTour={() => setTourOpen(true)} />
+      {loaded && (
+        <div
+          style={{
+            opacity: visible ? 1 : 0,
+            transition: 'opacity 0.6s ease',
+          }}
+        >
+          <Navbar onStartTour={() => setTourOpen(true)} />
 
-      <main>
-        <Hero />
-        <WhatIsSPHEREx />
-        <SkyExplorer manifest={manifest} />
-        <BlinkMode />
-        <MeetTheMovers />
-        <WavelengthSlider />
-        <HuntForPlanetX />
-      </main>
+          <main>
+            <Hero />
+            <WhatIsSPHEREx />
+            <SkyExplorer manifest={manifest} />
+            <BlinkMode />
+            <MeetTheMovers />
+            <WavelengthSlider />
+            <HuntForPlanetX />
+          </main>
 
-      <Footer />
+          <Footer />
 
-      <GuidedTour isOpen={tourOpen} onClose={() => setTourOpen(false)} />
-      <Chatbot />
+          <GuidedTour isOpen={tourOpen} onClose={() => setTourOpen(false)} />
+          <Chatbot />
+        </div>
+      )}
     </>
   )
 }

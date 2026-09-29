@@ -1,164 +1,137 @@
 import { useEffect, useRef, useState } from 'react'
 
+// All videos used across every section of the site
+const VIDEOS = [
+  { src: '/videos/hero.mp4',      label: 'Hero' },
+  { src: '/videos/telescope.mp4', label: 'Telescope' },
+  { src: '/videos/comet.mp4',     label: 'Comet' },
+  { src: '/videos/asteroids.mp4', label: 'Asteroids' },
+  { src: '/videos/planet_x.mp4',  label: 'Planet X' },
+]
+
 const MESSAGES = [
   'Warming up the telescope… just a few seconds.',
-  'Your connection seems a little slow right now. Hang tight, the sky is worth the wait.',
-  'Thank you for your patience! Slow internet can take a moment to bring in these big sky images.',
-  'Almost there. A stronger Wi-Fi or mobile signal will make this much faster.',
+  'Pulling in live sky data from SPHEREx…',
+  'Loading infrared footage — almost there.',
+  'Thank you for your patience! The cosmos is worth the wait.',
 ]
 
 export default function Preloader({ onComplete }) {
+  const [readyCount, setReadyCount] = useState(0)
   const [percent, setPercent] = useState(0)
-  const [bytes, setBytes] = useState({ received: 0, total: 0 })
-  const [speed, setSpeed] = useState(0)
   const [msgIndex, setMsgIndex] = useState(0)
   const [exiting, setExiting] = useState(false)
-  const [slowMode, setSlowMode] = useState(false)
-  const videoRef = useRef(null)
-  const blobUrlRef = useRef(null)
-  const startTimeRef = useRef(Date.now())
+  const completedRef = useRef(false)
+  const total = VIDEOS.length
 
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-  // Check connection quality
-  useEffect(() => {
-    const conn = navigator.connection
-    if (conn && (conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g')) {
-      setSlowMode(true)
-      setPercent(100)
-      setTimeout(complete, 1500)
-    }
-  }, [])
-
-  // Message rotation
-  useEffect(() => {
-    const timers = [
-      setTimeout(() => setMsgIndex(1), 4000),
-      setTimeout(() => setMsgIndex(2), 8000),
-      setTimeout(() => setMsgIndex(3), 12000),
-    ]
-    return () => timers.forEach(clearTimeout)
-  }, [])
-
-  // Safety timeout: 15s
-  useEffect(() => {
-    const t = setTimeout(() => { if (percent < 100) complete() }, 15000)
-    return () => clearTimeout(t)
-  }, [])
+  const reducedMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   const complete = () => {
+    if (completedRef.current) return
+    completedRef.current = true
     setPercent(100)
     setExiting(true)
     document.body.classList.remove('loading')
     setTimeout(onComplete, reducedMotion ? 100 : 900)
   }
 
-  // Streaming fetch of hero.mp4
+  // Message rotation
   useEffect(() => {
-    if (slowMode) return
+    const timers = [
+      setTimeout(() => setMsgIndex(1), 5000),
+      setTimeout(() => setMsgIndex(2), 10000),
+      setTimeout(() => setMsgIndex(3), 15000),
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [])
 
-    let cancelled = false
-    const speedInterval = setRef => clearInterval(setRef)
+  // Safety timeout: if videos take > 25s on slow connections, proceed anyway
+  useEffect(() => {
+    const t = setTimeout(complete, 25000)
+    return () => clearTimeout(t)
+  }, [])
 
-    ;(async () => {
-      try {
-        const res = await fetch('/videos/hero.mp4')
-        const contentLength = res.headers.get('Content-Length')
-        const total = contentLength ? parseInt(contentLength) : 0
-        setBytes(b => ({ ...b, total }))
+  // Preload all videos by creating hidden <video> elements and waiting for canplay
+  useEffect(() => {
+    const videoEls = []
+    let ready = 0
 
-        const reader = res.body.getReader()
-        const chunks = []
-        let received = 0
-        let lastReceived = 0
-        let lastTime = Date.now()
-
-        const speedTimer = setInterval(() => {
-          const now = Date.now()
-          const elapsed = (now - lastTime) / 1000
-          const delta = received - lastReceived
-          setSpeed(delta / elapsed)
-          lastReceived = received
-          lastTime = now
-        }, 1000)
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done || cancelled) break
-          chunks.push(value)
-          received += value.byteLength
-          setBytes({ received, total: total || received })
-
-          const videoProgress = total
-            ? (received / total) * 80
-            : Math.min(received / (10 * 1024 * 1024) * 80, 75)
-
-          setPercent(p => Math.max(p, Math.round(videoProgress)))
-        }
-
-        clearInterval(speedTimer)
-        if (cancelled) return
-
-        // Image preload = remaining 20%
-        const imgProgress = (progress) => {
-          setPercent(p => Math.max(p, Math.round(80 + progress * 20)))
-        }
-
-        // Assemble blob and set video src
-        const blob = new Blob(chunks, { type: 'video/mp4' })
-        const url = URL.createObjectURL(blob)
-        blobUrlRef.current = url
-
-        const video = videoRef.current
-        if (video) {
-          imgProgress(0.5)
-          video.src = url
-          video.load()
-          video.oncanplaythrough = () => {
-            imgProgress(1)
-            setTimeout(complete, 400)
-          }
-          video.onerror = () => {
-            imgProgress(1)
-            complete()
-          }
-          setTimeout(() => { if (percent < 95) complete() }, 5000)
-        } else {
-          complete()
-        }
-      } catch (e) {
-        console.warn('Hero video fetch failed:', e)
-        complete()
+    const onReady = () => {
+      ready++
+      setReadyCount(ready)
+      setPercent(Math.round((ready / total) * 100))
+      if (ready >= total) {
+        // All videos ready — small pause then reveal the site
+        setTimeout(complete, 400)
       }
-    })()
+    }
 
-    return () => { cancelled = true }
-  }, [slowMode])
+    VIDEOS.forEach(({ src }) => {
+      const vid = document.createElement('video')
+      vid.src = src
+      vid.muted = true
+      vid.playsInline = true
+      vid.preload = 'auto'
+      vid.style.display = 'none'
+      document.body.appendChild(vid)
+      videoEls.push(vid)
 
-  const fmt = (b) => {
-    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
-    return `${(b / (1024 * 1024)).toFixed(1)} MB`
-  }
+      const handleReady = () => {
+        onReady()
+        vid.removeEventListener('canplay', handleReady)
+        vid.removeEventListener('error', handleError)
+      }
+      const handleError = () => {
+        // On error still count as "done" so we don't block forever
+        console.warn(`Failed to preload: ${src}`)
+        onReady()
+        vid.removeEventListener('canplay', handleReady)
+        vid.removeEventListener('error', handleError)
+      }
+
+      vid.addEventListener('canplay', handleReady)
+      vid.addEventListener('error', handleError)
+      vid.load()
+    })
+
+    return () => {
+      videoEls.forEach(vid => {
+        vid.pause()
+        vid.src = ''
+        if (vid.parentNode) vid.parentNode.removeChild(vid)
+      })
+    }
+  }, [])
 
   if (reducedMotion) {
     return (
       <div className="preloader" style={{ transition: 'opacity 0.3s' }}>
         <div className="preloader__percent">{percent}%</div>
-        {slowMode && <p style={{ color: 'var(--lime)', fontSize: '0.9rem', textAlign: 'center' }}>
-          We've switched to a lighter version for your connection.
-        </p>}
+        <p style={{ color: 'var(--lime)', fontSize: '0.9rem', textAlign: 'center' }}>
+          {readyCount} / {total} videos ready
+        </p>
       </div>
     )
   }
 
   return (
-    <div className={`preloader grain${exiting ? ' preloader--exit' : ''}`} role="status" aria-label="Loading SkyShift">
+    <div
+      className={`preloader grain${exiting ? ' preloader--exit' : ''}`}
+      role="status"
+      aria-label="Loading SkyShift"
+    >
+      {/* Orbit ring */}
       <div className="preloader__orbit">
         <div className="preloader__ring" />
-        <div className="preloader__ring-fill" style={{
-          transform: `rotate(${percent * 3.6}deg)`,
-          transition: 'transform 0.4s'
-        }} />
+        <div
+          className="preloader__ring-fill"
+          style={{
+            transform: `rotate(${percent * 3.6}deg)`,
+            transition: 'transform 0.5s ease',
+          }}
+        />
         <div className="preloader__dot preloader__dot--1" />
         <div className="preloader__dot preloader__dot--2" />
         <div className="preloader__dot preloader__dot--3" />
@@ -167,25 +140,32 @@ export default function Preloader({ onComplete }) {
 
       <div className="preloader__percent" aria-live="polite">{percent}%</div>
 
-      <div className="preloader__details">
-        {bytes.total > 0 && (
-          <span className="preloader__bytes">
-            {fmt(bytes.received)} of {fmt(bytes.total)}
+      {/* Per-video progress dots */}
+      <div className="preloader__details" style={{ gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center', marginTop: '0.5rem' }}>
+        {VIDEOS.map((v, i) => (
+          <span
+            key={v.src}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              fontSize: '0.7rem',
+              color: i < readyCount ? 'var(--lime)' : 'rgba(255,255,255,0.4)',
+              transition: 'color 0.4s',
+            }}
+          >
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: i < readyCount ? 'var(--lime)' : 'rgba(255,255,255,0.2)',
+              transition: 'background 0.4s',
+              display: 'inline-block',
+            }} />
+            {v.label}
           </span>
-        )}
-        {speed > 0 && (
-          <span className="preloader__speed">{fmt(speed)}/s</span>
-        )}
-        {slowMode && (
-          <span style={{ color: 'var(--lime)' }}>
-            Lighter version loaded for your connection
-          </span>
-        )}
+        ))}
       </div>
 
-      <p className="preloader__message" aria-live="polite">
-        {MESSAGES[msgIndex]}
-      </p>
+      <p className="preloader__message" aria-live="polite">{MESSAGES[msgIndex]}</p>
 
       <button
         className="preloader__skip"
@@ -194,15 +174,6 @@ export default function Preloader({ onComplete }) {
       >
         Skip and enter →
       </button>
-
-      {/* Hidden video element to trigger canplaythrough */}
-      <video
-        ref={videoRef}
-        style={{ display: 'none' }}
-        muted
-        playsInline
-        preload="auto"
-      />
     </div>
   )
 }
